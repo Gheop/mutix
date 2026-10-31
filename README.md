@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/icon.svg" alt="mutix icon: a speaker crossed out by an AirPod" width="128"></p>
+<p align="center"><img src="assets/icon.svg" alt="mutix icon: two AirPods shaped like a quotation mark, followed by an ellipsis" width="128"></p>
 
 # mutix
 
@@ -190,4 +190,5 @@ MIT
 
 | Version | Date       | Changes                                  |
 |---------|------------|------------------------------------------|
+| 1.0.1   | 2026-10-31 | Replace the icon with the quotation-mark AirPods |
 | 1.0.0   | 2026-10-31 | Write the first version of the README    |
