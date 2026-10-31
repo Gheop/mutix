@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>mutix</title>
+  <rect width="256" height="256" rx="56" fill="#1d2433"/>
+  <!-- AirPod -->
+  <g transform="translate(76 96) rotate(14)">
+    <rect x="-12" y="6" width="24" height="122" rx="12" fill="#f5f5f7"/>
+    <ellipse cx="0" cy="0" rx="34" ry="31" fill="#f5f5f7"/>
+    <ellipse cx="11" cy="-6" rx="11" ry="8" fill="#3a4152"/>
+    <rect x="-5" y="104" width="10" height="14" rx="5" fill="#c9ccd3"/>
+  </g>
+  <!-- Motion arcs instead of sound waves -->
+  <g fill="none" stroke="#4cc9f0" stroke-width="9" stroke-linecap="round" stroke-dasharray="2 16">
+    <path d="M124 64 Q140 86 124 108"/>
+    <path d="M144 46 Q170 86 144 126"/>
+    <path d="M164 30 Q200 86 164 142"/>
+  </g>
+  <!-- Text cursor -->
+  <g fill="#4cc9f0">
+    <rect x="208" y="60" width="10" height="52" rx="4"/>
+    <rect x="198" y="56" width="30" height="8" rx="4"/>
+    <rect x="198" y="108" width="30" height="8" rx="4"/>
+  </g>
+</svg>

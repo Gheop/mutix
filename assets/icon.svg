@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>mutix</title>
+  <rect width="256" height="256" rx="56" fill="#1d2433"/>
+  <!-- Speaker -->
+  <g fill="#e8eaf0">
+    <rect x="44" y="102" width="40" height="52" rx="8"/>
+    <path d="M80 102 L128 66 Q134 62 134 70 L134 186 Q134 194 128 190 L80 154 Z"/>
+  </g>
+  <g fill="none" stroke="#4cc9f0" stroke-width="10" stroke-linecap="round" opacity="0.45">
+    <path d="M160 100 Q176 128 160 156"/>
+    <path d="M184 82 Q212 128 184 174"/>
+  </g>
+  <!-- AirPod as the slash -->
+  <g transform="translate(66 52) rotate(-45)" stroke="#1d2433" stroke-width="8" paint-order="stroke">
+    <rect x="-11" y="8" width="22" height="168" rx="11" fill="#f5f5f7"/>
+    <ellipse cx="0" cy="0" rx="34" ry="30" fill="#f5f5f7"/>
+    <ellipse cx="10" cy="-6" rx="11" ry="8" fill="#3a4152" stroke="none"/>
+    <rect x="-5" y="150" width="10" height="16" rx="5" fill="#c9ccd3" stroke="none"/>
+  </g>
+</svg>
