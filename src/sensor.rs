@@ -84,18 +84,21 @@ fn run(device: Option<String>, interval_us: u32, tx: &Sender<Event>, stop: &Atom
     }
 }
 
-/// Forwards one packet; returns true if it was a motion frame.
+/// Forwards one packet; returns true if it held at least one motion frame.
 fn forward(packet: &[u8], tx: &Sender<Event>) -> Result<bool> {
-    let event = if let Some(f) = frame::parse(packet) {
-        Event::Frame(f)
+    let frames = frame::parse(packet);
+    let events: Vec<Event> = if !frames.is_empty() {
+        frames.into_iter().map(Event::Frame).collect()
     } else if let Some((l, r)) = frame::parse_ears(packet) {
-        Event::Ears(l, r)
+        vec![Event::Ears(l, r)]
     } else {
         return Ok(false);
     };
-    let is_frame = matches!(event, Event::Frame(_));
-    if tx.send(event).is_err() {
-        bail!("nobody is listening any more");
+    let is_frame = matches!(events[0], Event::Frame(_));
+    for event in events {
+        if tx.send(event).is_err() {
+            bail!("nobody is listening any more");
+        }
     }
     Ok(is_frame)
 }
