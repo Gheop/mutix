@@ -188,7 +188,7 @@ MIT
 
 ## README changelog
 
-| Version | Date       | Changes                                  |
-|---------|------------|------------------------------------------|
+| Version | Date       | Changes                                          |
+|---------|------------|--------------------------------------------------|
 | 1.0.1   | 2026-10-31 | Replace the icon with the quotation-mark AirPods |
-| 1.0.0   | 2026-10-31 | Write the first version of the README    |
+| 1.0.0   | 2026-10-31 | Write the first version of the README            |
