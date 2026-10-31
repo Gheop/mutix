@@ -6,7 +6,7 @@ Silent words to text on Linux, read from the motion sensors of your AirPods.
 
 You mouth a word without a sound. Your jaw moves, the AirPods feel it, and mutix types the word into the focused window, presses a shortcut or runs a command. It works with a small vocabulary you train yourself in about 5 minutes, and it runs entirely on your machine. When you speak aloud, to someone in the room or in a call, the microphone notices it and nothing is typed.
 
-> **Status: early prototype.** mutix connects, streams the motion sensors at about 85 Hz, records, recognizes and types. Recognition is still rough. On 4 French words (oui, non, bonjour, merci) trained in two short sessions, the offline test recognizes 74 % of the takes, where chance is 24 %. In a live test, mouthing the words freely, about half came out right. Expect a handful of distinct words, not dictation.
+> **Status: experiment, not usable day to day.** Everything works up to the recognition: mutix streams the motion sensors at about 85 Hz, trains, types and ignores words said aloud. But the AirPods feel the jaw too faintly. Offline, 64 % of silently mouthed takes are recognized among 12 words; live, almost every word came out wrong. See [Results](#results). What remains useful is the [protocol work](#protocol-notes): the AirPods motion stream at up to 100 Hz on Linux.
 
 ## Where it comes from
 
@@ -220,6 +220,22 @@ What mutix adds to what LibrePods documents, measured on AirPods Pro 3:
 - The AirPods honour the interval: 40 000 µs gives 25 Hz, 10 000 µs about 100 Hz. At 5 000 µs Bluetooth delivers about 90 samples a second, no more than at 10 ms.
 - The sample is the last field of the reply, a 58-byte blob: byte 0 = 1, bytes 1-8 = timestamp (ns), 20-25 attitude, 26-31 rotation rate, 38-43 user acceleration, 44-49 gravity (about 1024 per g). The first samples after a start have a zero attitude.
 
+## Results
+
+Measured on one person, AirPods Pro 3, on 2026-10-31.
+
+| Test | Words | Takes | Recognized | Chance |
+|---|---|---|---|---|
+| Offline, 2 command-line sessions (each word recorded in a block) | 4 | 72 | 74 % | 24 % |
+| Offline, karaoke in the app (words shuffled) | 12 | 100 | 64 % | 7 % |
+| Offline, everything together | 12 | 172 | 68 % | 11 % |
+| Live, 4 words, `mutix listen` | 4 | 18 | about half | 25 % |
+| Live, 12 words, test screen of the app | 12 | – | almost none | 8 % |
+
+"Offline" leaves each take out in turn and recognizes it with the others; the permutation test gives p = 0.002 every time, so the motion does carry the words. The live results fall far below: live, mutix has to find where a word starts and ends by itself, while training takes are fixed windows after a prompt, and the two kinds of segment do not match well. Fixing that would at best bring live results near the offline ones, still more than one error in three: the sensors, made to follow the head, feel the jaw from the ear only faintly.
+
+Two things did help and are worth keeping in mind for similar signals: comparing the derivative of each take rather than its raw values, scaled to a fixed amplitude (58 % → 75 % on the same takes), and cutting each take around its strongest movement instead of at fixed thresholds.
+
 ## Limits
 
 - Each user trains their own words; takes from another person, or from the AirPods seated differently, match less well.
@@ -235,6 +251,7 @@ MIT
 
 | Version | Date       | Changes                                          |
 |---------|------------|--------------------------------------------------|
+| 1.2.0   | 2026-10-31 | Add the results, call mutix an experiment        |
 | 1.1.0   | 2026-10-31 | Add the Mutix app, vocabularies and voice guard  |
 | 1.0.1   | 2026-10-31 | Replace the icon with the quotation-mark AirPods |
 | 1.0.0   | 2026-10-31 | Write the first version of the README            |
