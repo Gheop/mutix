@@ -18,6 +18,38 @@ use xkbcommon::xkb;
 const SHIFT: u16 = 42; // KEY_LEFTSHIFT
 const ALTGR: u16 = 100; // KEY_RIGHTALT, ISO_Level3_Shift on most layouts
 const CTRL: u16 = 29; // KEY_LEFTCTRL
+const ALT: u16 = 56; // KEY_LEFTALT
+const SUPER: u16 = 125; // KEY_LEFTMETA
+
+/// A key combination such as "ctrl+shift+z": modifier key codes and the
+/// keysym of the last key.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Combo {
+    pub modifiers: Vec<u16>,
+    pub keysym: u32,
+}
+
+pub fn parse_keys(spec: &str) -> Result<Combo> {
+    let parts: Vec<&str> = spec.split('+').map(str::trim).filter(|p| !p.is_empty()).collect();
+    let Some((last, mods)) = parts.split_last() else {
+        bail!("empty key combination");
+    };
+    let mut modifiers = Vec::new();
+    for m in mods {
+        modifiers.push(match m.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => CTRL,
+            "shift" => SHIFT,
+            "alt" => ALT,
+            "super" | "meta" | "win" => SUPER,
+            other => bail!("unknown modifier {other:?} in {spec:?}"),
+        });
+    }
+    let keysym = xkb::keysym_from_name(last, xkb::KEYSYM_NO_FLAGS).raw();
+    if keysym == 0 {
+        bail!("unknown key {last:?} in {spec:?}; use xkb names such as Return, Escape, BackSpace or a letter");
+    }
+    Ok(Combo { modifiers, keysym })
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Stroke {
@@ -126,6 +158,10 @@ impl Layout {
         }
     }
 
+    pub fn stroke_for_keysym(&self, keysym: u32) -> Option<Stroke> {
+        self.strokes.get(&keysym).copied()
+    }
+
     /// Strokes for one character; `None` if the layout cannot type it.
     pub fn strokes(&self, c: char) -> Option<Vec<Stroke>> {
         if let Some(s) = self.strokes.get(&Self::keysym_for(c)) {
@@ -224,6 +260,24 @@ impl Keyboard {
         Ok(())
     }
 
+    /// Presses a combination such as "ctrl+c" with the user's layout, so the
+    /// letter is the one printed on their key.
+    pub fn press_keys(&mut self, spec: &str) -> Result<()> {
+        let combo = parse_keys(spec)?;
+        let stroke = self
+            .layout
+            .stroke_for_keysym(combo.keysym)
+            .with_context(|| format!("no key for {spec:?} in this layout"))?;
+        for m in &combo.modifiers {
+            self.key(*m, true)?;
+        }
+        self.tap(stroke)?;
+        for m in combo.modifiers.iter().rev() {
+            self.key(*m, false)?;
+        }
+        Ok(())
+    }
+
     pub fn type_text(&mut self, text: &str) -> Result<()> {
         for c in text.chars() {
             match self.layout.strokes(c) {
@@ -304,6 +358,19 @@ mod tests {
         assert_eq!(fr.strokes('@').map(|s| s[0].altgr), Some(true));
         // ê goes through the dead circumflex key.
         assert_eq!(fr.strokes('ê').map(|s| s.len()), Some(2));
+    }
+
+    #[test]
+    fn key_combinations() {
+        let c = parse_keys("ctrl+shift+z").unwrap();
+        assert_eq!(c.modifiers, vec![CTRL, SHIFT]);
+        assert_eq!(c.keysym, 0x7a);
+        assert_eq!(parse_keys("Return").unwrap().keysym, 0xff0d);
+        assert!(parse_keys("hyper+x").is_err());
+        assert!(parse_keys("ctrl+Nope").is_err());
+        // On AZERTY, Ctrl+Z must press the key printed Z (KEY_W position).
+        let fr = Layout::load(Some("fr")).unwrap();
+        assert_eq!(fr.stroke_for_keysym(0x7a).map(|s| s.key), Some(17));
     }
 
     #[test]

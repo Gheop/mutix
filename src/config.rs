@@ -37,12 +37,23 @@ pub const SAMPLE: &str = r#"# mutix configuration. Every key is optional.
 # $MUTIX_TEXT. Default with `mutix train --speak`: spd-say.
 # speak = "piper -m ~/piper/fr_FR-siwis-medium.onnx --output-raw | pacat --raw --rate=22050 --channels=1"
 
-# What each word does. Without an entry, the word is typed followed by a space.
+# Microphone used to notice when you speak aloud: then nothing is typed.
+# Default: the default input. `pactl list short sources` lists the names.
+# Avoid the AirPods' own microphone: it switches them to the low-quality
+# headset profile.
+# microphone = "alsa_input.pci-0000_00_1f.3.analog-stereo"
+# voice_guard = true
+
+# What each word does. Built-in words (oui, copie, entrée, yes, copy, enter…)
+# have a default; any other word is typed followed by a space.
 # [words.bonjour]
 # text = "Bonjour !\n"
 #
-# [words.suivant]
-# command = "playerctl next"
+# [words.annule]
+# keys = "ctrl+z"
+#
+# [words.musique]
+# command = "playerctl play-pause"
 "#;
 
 #[derive(Debug, Default, Deserialize)]
@@ -57,6 +68,8 @@ pub struct Config {
     pub trigger: Option<f32>,
     pub keyboard: Option<String>,
     pub speak: Option<String>,
+    pub microphone: Option<String>,
+    pub voice_guard: Option<bool>,
     pub words: BTreeMap<String, Action>,
 }
 
@@ -64,6 +77,8 @@ pub struct Config {
 #[serde(deny_unknown_fields)]
 pub struct Action {
     pub text: Option<String>,
+    /// Keys pressed together, xkb names joined by "+": "ctrl+c", "Return".
+    pub keys: Option<String>,
     pub command: Option<String>,
 }
 
@@ -111,11 +126,17 @@ impl Config {
     }
 
     /// What to do with a recognized word.
+    /// The config entry, else the built-in vocabulary's, else the word typed
+    /// followed by a space.
     pub fn action(&self, word: &str) -> Action {
-        self.words.get(word).cloned().unwrap_or_else(|| Action {
-            text: Some(format!("{word} ")),
-            command: None,
-        })
+        self.words
+            .get(word)
+            .cloned()
+            .or_else(|| crate::vocab::default_action(word))
+            .unwrap_or_else(|| Action {
+                text: Some(format!("{word} ")),
+                ..Action::default()
+            })
     }
 }
 
@@ -128,6 +149,7 @@ mod tests {
         let c: Config = toml::from_str(SAMPLE).unwrap();
         assert_eq!(c.interval_us(), 10_000);
         assert_eq!(c.action("salut").text.as_deref(), Some("salut "));
+        assert_eq!(c.action("copie").keys.as_deref(), Some("ctrl+c"));
         let c: Config = toml::from_str(
             "features = [\"rotation\"]\ninterval_ms = 20\n[words.suivant]\ncommand = \"playerctl next\"\n",
         )

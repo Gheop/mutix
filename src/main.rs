@@ -1,19 +1,3 @@
-mod aap;
-mod bluez;
-mod config;
-mod control;
-mod dataset;
-mod dtw;
-mod eval;
-mod features;
-mod frame;
-mod model;
-mod output;
-mod segmenter;
-mod sensor;
-mod tui;
-mod voice;
-
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,13 +5,14 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use mutix::{bluez, config, control, dataset, eval, frame, mic, output, segmenter, tui, voice};
 
-use config::Config;
-use dataset::Dataset;
-use features::FeatureSet;
-use model::Model;
-use segmenter::Segmenter;
-use sensor::{Event, Sensor};
+use mutix::config::Config;
+use mutix::dataset::Dataset;
+use mutix::features::FeatureSet;
+use mutix::model::Model;
+use mutix::segmenter::Segmenter;
+use mutix::sensor::{Event, Sensor};
 
 #[derive(Parser)]
 #[command(
@@ -101,6 +86,9 @@ enum Cmd {
         /// Stop after this many seconds.
         #[arg(long)]
         seconds: Option<u64>,
+        /// Act on words even while you speak aloud.
+        #[arg(long)]
+        no_voice_guard: bool,
     },
     /// Start or end a capture in a running `mutix listen`.
     Toggle,
@@ -164,7 +152,8 @@ fn run(cli: Cli) -> Result<()> {
             manual,
             speak,
             seconds,
-        } => listen(&cfg, &cli.dataset, dry_run, manual, speak, seconds),
+            no_voice_guard,
+        } => listen(&cfg, &cli.dataset, dry_run, manual, speak, seconds, no_voice_guard),
         Cmd::Toggle => control::send(control::Command::Toggle),
         Cmd::Calibrate => control::send(control::Command::Calibrate),
         Cmd::Config { init } => config_cmd(&cli.config, init),
@@ -445,14 +434,32 @@ fn listen(
     manual: bool,
     speak: bool,
     seconds: Option<u64>,
+    no_voice_guard: bool,
 ) -> Result<()> {
     catch_signals();
     let ds = Dataset::load(path)?;
     let model = Model::train(&ds.templates, cfg.params()?)?;
-    let mut keyboard = if dry_run {
+    let keyboard = if dry_run {
         None
     } else {
         Some(output::Keyboard::new(output::Layout::load(cfg.keyboard.as_deref())?)?)
+    };
+    let mic = if no_voice_guard || cfg.voice_guard == Some(false) {
+        None
+    } else {
+        match mic::Microphone::open(cfg.microphone.as_deref()) {
+            Ok(m) => Some(m),
+            Err(e) => {
+                eprintln!("mutix: {e:#}; words said aloud will be typed too");
+                None
+            }
+        }
+    };
+    let mut actions = Actions {
+        model: &model,
+        cfg,
+        keyboard,
+        mic,
     };
     let server = control::Server::bind()?;
     let sensor = Sensor::spawn(cfg.device.clone(), cfg.interval_us());
@@ -469,14 +476,14 @@ fn listen(
             use control::Command as C;
             match cmd {
                 C::Toggle if seg.is_capturing() => {
-                    handle(seg.stop(), &model, cfg, keyboard.as_mut());
+                    actions.handle(seg.stop());
                 }
                 C::Toggle | C::Start => {
                     seg.start();
                     eprintln!("● capturing");
                 }
                 C::Stop => {
-                    handle(seg.stop(), &model, cfg, keyboard.as_mut());
+                    actions.handle(seg.stop());
                 }
                 C::Calibrate => {
                     eprintln!("Keep still for 2 seconds…");
@@ -500,7 +507,7 @@ fn listen(
                 eprintln!("Ready.");
             }
             Some(ev) => {
-                if let (Some(word), Some(v)) = (handle(ev, &model, cfg, keyboard.as_mut()), &voice) {
+                if let (Some(word), Some(v)) = (actions.handle(ev), &voice) {
                     v.say(&word);
                     flush(&sensor, &mut seg);
                 }
@@ -511,42 +518,62 @@ fn listen(
     Ok(())
 }
 
-/// Classifies a finished segment and acts on it; returns the word if one was recognized.
-fn handle(
-    ev: segmenter::Event,
-    model: &Model,
-    cfg: &Config,
-    keyboard: Option<&mut output::Keyboard>,
-) -> Option<String> {
-    let segmenter::Event::Finished(frames) = ev else {
-        return None;
-    };
-    let d = model.classify(&frames);
-    let Some(word) = &d.word else {
-        eprintln!(
-            "  ? closest \"{}\" (distance {:.2}, margin {:.2}): {}",
-            d.best,
-            d.distance,
-            d.margin,
-            d.reason.unwrap_or("")
-        );
-        return None;
-    };
-    println!("{word}");
-    eprintln!("  ✓ {word} (distance {:.2}, margin {:.2})", d.distance, d.margin);
-    let action = cfg.action(word);
-    if let Some(cmd) = &action.command
-        && keyboard.is_some()
-        && let Err(e) = output::run_command(cmd, word)
-    {
-        eprintln!("mutix: {e:#}");
+/// What `listen` does with a finished segment.
+struct Actions<'a> {
+    model: &'a Model,
+    cfg: &'a Config,
+    keyboard: Option<output::Keyboard>,
+    mic: Option<mic::Microphone>,
+}
+
+impl Actions<'_> {
+    /// Classifies a segment and acts on it; returns the word if one was
+    /// recognized and acted on.
+    fn handle(&mut self, ev: segmenter::Event) -> Option<String> {
+        let segmenter::Event::Finished(frames) = ev else {
+            return None;
+        };
+        let d = self.model.classify(&frames);
+        // The segment just ended: it covers the last `span` seconds.
+        let span = frames.last().map(|l| l.t - frames[0].t).unwrap_or(0.0);
+        let now = Instant::now();
+        let from = now.checked_sub(Duration::from_secs_f64(span.max(0.0))).unwrap_or(now);
+        if let Some(mic) = &self.mic
+            && mic.voiced_share(from, now) > 0.25
+        {
+            eprintln!("  🗣 spoken aloud, ignored (closest \"{}\")", d.best);
+            return None;
+        }
+        let Some(word) = &d.word else {
+            eprintln!(
+                "  ? closest \"{}\" (distance {:.2}, margin {:.2}): {}",
+                d.best,
+                d.distance,
+                d.margin,
+                d.reason.unwrap_or("")
+            );
+            return None;
+        };
+        println!("{word}");
+        eprintln!("  ✓ {word} (distance {:.2}, margin {:.2})", d.distance, d.margin);
+        let action = self.cfg.action(word);
+        let Some(kb) = self.keyboard.as_mut() else {
+            return Some(word.clone());
+        };
+        let result = if let Some(cmd) = &action.command {
+            output::run_command(cmd, word)
+        } else if let Some(keys) = &action.keys {
+            kb.press_keys(keys)
+        } else if let Some(text) = &action.text {
+            kb.type_text(text)
+        } else {
+            Ok(())
+        };
+        if let Err(e) = result {
+            eprintln!("mutix: {e:#}");
+        }
+        Some(word.clone())
     }
-    if let (Some(text), Some(kb)) = (&action.text, keyboard)
-        && let Err(e) = kb.type_text(text)
-    {
-        eprintln!("mutix: {e:#}");
-    }
-    Some(word.clone())
 }
 
 fn config_cmd(path: &std::path::Path, init: bool) -> Result<()> {
@@ -614,6 +641,19 @@ fn doctor(cfg: &Config) -> Result<()> {
             "FAIL Motion stream: {}",
             last_error.unwrap_or_else(|| "no samples".into())
         ),
+    }
+
+    match mic::Microphone::open(cfg.microphone.as_deref()) {
+        Ok(m) => {
+            std::thread::sleep(Duration::from_millis(1500));
+            let heard = m.level() > 0.0;
+            println!(
+                "{} Microphone: {} (speaking aloud blocks typing)",
+                ok(heard),
+                if heard { "listening" } else { "no sound received" }
+            );
+        }
+        Err(e) => println!("FAIL Microphone: {e:#}"),
     }
 
     match output::Layout::load(cfg.keyboard.as_deref()) {
