@@ -150,6 +150,9 @@ fn session(dev: &bluez::Device, interval_us: u32, tx: &Sender<Event>, stop: &Ato
             last_request = Instant::now();
         }
     }
-    let _ = link.stop_tracking(MOTION_STREAM);
+    // No stop request on the way out: the motion stream is shared by every
+    // connection to the AirPods, so stopping it would also cut a `mutix
+    // listen` or a training session still running. Closing the channel is
+    // enough.
     Ok(())
 }
