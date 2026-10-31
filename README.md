@@ -4,7 +4,7 @@
 
 Silent words to text on Linux, read from the motion sensors of your AirPods.
 
-You mouth a word without a sound. Your jaw moves, the AirPods feel it, and mutix types the word into the focused window or runs a command you chose for it. It works with a small vocabulary you train yourself, a few minutes per word, and it runs entirely on your machine.
+You mouth a word without a sound. Your jaw moves, the AirPods feel it, and mutix types the word into the focused window, presses a shortcut or runs a command. It works with a small vocabulary you train yourself in about 5 minutes, and it runs entirely on your machine. When you speak aloud, to someone in the room or in a call, the microphone notices it and nothing is typed.
 
 > **Status: early prototype.** mutix connects, streams the motion sensors at about 85 Hz, records, recognizes and types. Recognition is still rough. On 4 French words (oui, non, bonjour, merci) trained in two short sessions, the offline test recognizes 74 % of the takes, where chance is 24 %. In a live test, mouthing the words freely, about half came out right. Expect a handful of distinct words, not dictation.
 
@@ -19,6 +19,8 @@ macOS hands head motion to apps through `CMHeadphoneMotionManager`. Linux has no
 - Linux with BlueZ and systemd (mutix reads the device list with `busctl`), the AirPods paired and connected.
 - AirPods with head tracking: AirPods Pro, Pro 2, Pro 3, AirPods 3 or 4, AirPods Max. Only AirPods Pro 3 have been tested.
 - Rust 1.88 or later and `libxkbcommon` (`libxkbcommon-devel` on Fedora, `libxkbcommon-dev` on Debian and Ubuntu).
+- For the training app, Rust 1.92 or later, GTK 4.12 and libadwaita 1.4 (`gtk4-devel libadwaita-devel` on Fedora, `libgtk-4-dev libadwaita-1-dev` on Debian and Ubuntu).
+- `parec` (PipeWire or PulseAudio) to notice when you speak aloud.
 - Write access to `/dev/uinput` to type, see below. Without it mutix still recognizes words and runs commands.
 
 mutix shares the AirPods with other tools: BudsLink or LibrePods can stay connected.
@@ -26,7 +28,8 @@ mutix shares the AirPods with other tools: BudsLink or LibrePods can stay connec
 ## Install
 
 ```bash
-cargo install --path .
+./install.sh            # mutix, the Mutix training app, its launcher and icon
+cargo install --path .  # or only the command line, without GTK
 mutix doctor
 ```
 
@@ -35,6 +38,7 @@ mutix doctor
 ```
 ok   BlueZ: 2 AirPods paired, 1 connected
 ok   Motion stream: 83 Hz (asked for 100 Hz)
+ok   Microphone: listening (speaking aloud blocks typing)
 ok   Keyboard layout: from GNOME
 ok   Virtual keyboard (/dev/uinput)
 ```
@@ -50,6 +54,36 @@ sudo udevadm control --reload && sudo udevadm trigger
 Steam and Sunshine install the same rule, so it may already be there.
 
 ## Getting started
+
+### With the Mutix app
+
+Put both AirPods in and open **Mutix** from your applications (or run `mutix-gtk`). Choose the vocabulary, French or English, and start the training.
+
+1. **Keep still** for 2 seconds: mutix measures the sensor noise.
+2. **Karaoke.** A line of words appears. One word is underlined, then highlighted: mouth it without a sound. It turns green once its movement is recorded, red if it was skipped. If you said it aloud, or nothing moved, the app asks again. 12 words, 8 times each, take about 5 minutes.
+3. **Results.** The share of takes recognized, against chance, and each word with the one it is most often mistaken for. Weak words can be trained again in one click.
+4. **Test.** Mouth words freely: each one shows up green when recognized, grey when mutix is unsure, orange when you said it aloud.
+
+Then run `mutix listen` to use the words everywhere.
+
+### Built-in vocabularies
+
+The words were picked to move the jaw and lips in clearly different ways, and each one does something useful out of the box:
+
+| Français | English | Does |
+|---|---|---|
+| oui, non, bonjour, merci | yes, no, hello, thanks | types the word |
+| entrée | enter | Return |
+| efface | delete | Ctrl+Backspace (deletes a word) |
+| annule | undo | Ctrl+Z |
+| copie, colle | copy, paste | Ctrl+C, Ctrl+V |
+| stop | stop | Escape |
+| suivant | next | Tab |
+| espace | space | Space |
+
+Shortcuts go through your keyboard layout: on AZERTY, "annule" presses the key printed Z.
+
+### From the command line
 
 Put both AirPods in, then train a few words. With `--speak`, a voice tells you which word to mouth, take after take, so you can keep your eyes off the screen:
 
@@ -83,7 +117,11 @@ Try it without typing anything, with the recognized word said back in your ears:
 mutix listen --dry-run --speak
 ```
 
-Then for real: `mutix listen` types each recognized word, followed by a space, into the focused window.
+Then for real: `mutix listen` acts on each recognized word in the focused window.
+
+### Speaking aloud
+
+mutix listens to the microphone, by default the computer's own, and keeps only a loudness level every 20 ms; no audio is stored. When a word was mouthed while you were speaking aloud, it is ignored: you can talk with someone, or in a call, without mutix typing. A colleague talking near you has the same effect, which errs on the safe side. Avoid choosing the AirPods' microphone: it switches them to the low-quality headset profile. `--no-voice-guard` or `voice_guard = false` turns this off.
 
 ## Commands
 
@@ -97,7 +135,8 @@ Then for real: `mutix listen` types each recognized word, followed by a space, i
 | `mutix words` | List trained words and their number of takes |
 | `mutix forget WORD [--last]` | Delete a word, or only its last take |
 | `mutix eval [--compare]` | Leave-one-out accuracy, permutation test, confusion matrix |
-| `mutix listen [--dry-run] [--manual] [--speak]` | Recognize words and act on them |
+| `mutix-gtk` | The training app: karaoke, results and live test |
+| `mutix listen [--dry-run] [--manual] [--speak] [--no-voice-guard]` | Recognize words and act on them |
 | `mutix toggle` | Start or end a capture in a running `mutix listen --manual` |
 | `mutix calibrate` | Make a running `mutix listen` measure the noise again |
 | `mutix config [--init]` | Show the configuration path, or write a commented sample |
@@ -145,11 +184,17 @@ interval_ms = 10               # 5 to 40; 10 gives about 85-100 Hz
 features = ["attitude", "rotation", "acceleration"]
 trigger = 3.0                  # auto detection: start at 3× the noise, end below half of that
 keyboard = "fr"                # default: GNOME's first input source
+microphone = "alsa_input.pci-0000_00_1f.3.analog-stereo"   # default: the default input
+voice_guard = true             # ignore words mouthed while you speak aloud
 speak = "spd-say -w \"$MUTIX_TEXT\""   # command for --speak; the text also comes on stdin
 
-# What each word does. Without an entry, the word is typed followed by a space.
+# What each word does. Built-in words have a default; any other word is
+# typed followed by a space.
 [words.bonjour]
 text = "Bonjour !\n"
+
+[words.annule]
+keys = "ctrl+z"                # xkb key names: Return, Escape, BackSpace, a letter…
 
 [words.suivant]
 command = "playerctl next"     # $MUTIX_WORD holds the word
@@ -190,5 +235,6 @@ MIT
 
 | Version | Date       | Changes                                          |
 |---------|------------|--------------------------------------------------|
+| 1.1.0   | 2026-10-31 | Add the Mutix app, vocabularies and voice guard  |
 | 1.0.1   | 2026-10-31 | Replace the icon with the quotation-mark AirPods |
 | 1.0.0   | 2026-10-31 | Write the first version of the README            |
