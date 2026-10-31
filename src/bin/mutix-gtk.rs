@@ -214,6 +214,11 @@ fn build(gtk_app: &adw::Application) {
         glib::ControlFlow::Continue
     });
     window.present();
+    // Enter starts the training; nothing else should look focused at start.
+    if let Some(start) = named_button(&window.clone().upcast(), "start") {
+        window.set_default_widget(Some(&start));
+        start.grab_focus();
+    }
 }
 
 fn page(child: &impl IsA<gtk::Widget>) -> adw::Clamp {
@@ -312,7 +317,19 @@ fn toolbar(w: &Widgets) -> adw::ToolbarView {
     view
 }
 
-fn welcome_page(w: &Widgets) -> gtk::ScrolledWindow {
+/// A page whose content scrolls above a bar of buttons that stays visible,
+/// whatever the window height.
+fn with_buttons(content: &impl IsA<gtk::Widget>, buttons: &gtk::Box) -> adw::ToolbarView {
+    buttons.set_halign(gtk::Align::Center);
+    buttons.set_margin_top(12);
+    buttons.set_margin_bottom(12);
+    let view = adw::ToolbarView::new();
+    view.set_content(Some(&gtk::ScrolledWindow::builder().child(content).vexpand(true).build()));
+    view.add_bottom_bar(buttons);
+    view
+}
+
+fn welcome_page(w: &Widgets) -> adw::ToolbarView {
     let status = adw::StatusPage::builder()
         .title("Mutix")
         .description(t(
@@ -343,9 +360,8 @@ fn welcome_page(w: &Widgets) -> gtk::ScrolledWindow {
     let col = vbox(24);
     col.append(&devices);
     col.append(&options);
-    col.append(&buttons);
     status.set_child(Some(&page(&col)));
-    gtk::ScrolledWindow::builder().child(&status).build()
+    with_buttons(&status, &buttons)
 }
 
 fn still_page(w: &Widgets) -> adw::StatusPage {
@@ -394,7 +410,7 @@ fn karaoke_page(w: &Widgets) -> gtk::Box {
     outer
 }
 
-fn results_page(w: &Widgets) -> gtk::ScrolledWindow {
+fn results_page(w: &Widgets) -> adw::ToolbarView {
     let col = vbox(18);
     col.append(&w.results_list);
     let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -406,7 +422,6 @@ fn results_page(w: &Widgets) -> gtk::ScrolledWindow {
     buttons.append(&test);
     buttons.append(&w.weak_button);
     buttons.append(&home);
-    col.append(&buttons);
     let note = gtk::Label::builder()
         .label(t(
             "Pour l'utiliser partout : lancez « mutix listen » dans un terminal.",
@@ -417,7 +432,7 @@ fn results_page(w: &Widgets) -> gtk::ScrolledWindow {
         .build();
     col.append(&note);
     w.results_page.set_child(Some(&page(&col)));
-    gtk::ScrolledWindow::builder().child(&w.results_page).build()
+    with_buttons(&w.results_page, &buttons)
 }
 
 fn test_page(w: &Widgets) -> gtk::Box {
