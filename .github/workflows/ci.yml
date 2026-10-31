@@ -21,9 +21,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # libxkbcommon to link, xkb-data for the keyboard layout tests.
+      # libxkbcommon to link, xkb-data for the keyboard layout tests, GTK and
+      # libadwaita for the training app.
       - name: System libraries
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libxkbcommon-dev xkb-data
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libxkbcommon-dev xkb-data libgtk-4-dev libadwaita-1-dev
 
       - name: Toolchain
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
@@ -31,5 +32,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked
+      - run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - run: cargo test --all-features --locked

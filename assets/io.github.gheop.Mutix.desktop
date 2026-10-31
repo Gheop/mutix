@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Mutix
+Comment=Teach mutix the words you mouth silently
+Comment[fr]=Apprenez à mutix les mots que vous articulez en silence
+Exec=mutix-gtk
+Icon=io.github.gheop.Mutix
+Terminal=false
+Categories=Utility;Accessibility;
+Keywords=AirPods;silent;speech;voice;dictation;
+Keywords[fr]=AirPods;silence;parole;voix;dictée;
+StartupNotify=true
