@@ -1,0 +1,29 @@
+[package]
+name = "mutix"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Silent words to text on Linux, read from the motion sensors of your AirPods"
+license = "MIT"
+repository = "https://github.com/Gheop/mutix"
+readme = "README.md"
+keywords = ["airpods", "silent-speech", "linux", "bluetooth", "accessibility"]
+categories = ["command-line-utilities", "accessibility"]
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+crossterm = "0.29.0"
+dirs = "7.0.0"
+evdev = "0.13.2"
+libc = "0.2.191"
+ratatui = "0.30.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+toml = "1.1.8"
+xkbcommon = "0.9.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
