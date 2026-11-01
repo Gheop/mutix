@@ -6,7 +6,7 @@
 
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
@@ -22,6 +22,10 @@ const HEADER: [u8; 4] = [0x04, 0x00, 0x04, 0x00];
 const HANDSHAKE: [u8; 16] = [0, 0, 4, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const SET_FEATURES: [u8; 10] = [0x4d, 0x00, 0xd7, 0, 0, 0, 0, 0, 0, 0];
 const REQUEST_NOTIFICATIONS: [u8; 6] = [0x0f, 0x00, 0xff, 0xff, 0xff, 0xff];
+const CONNECT_RESPONSE: [u8; 4] = [0x01, 0x00, 0x04, 0x00];
+const DISCONNECT: [u8; 6] = [0x02, 0x00, 0x04, 0x00, 0x00, 0x00];
+const DISCONNECT_RESPONSE: [u8; 4] = [0x03, 0x00, 0x04, 0x00];
+const HANDSHAKE_TRIES: usize = 4;
 const OPCODE_HEAD_TRACKING: u8 = 0x17;
 
 /// Stream 16 carries the motion samples. The AirPods only serve it once
@@ -176,9 +180,29 @@ impl Link {
     }
 
     /// Handshake, feature flags and notification request, as Apple devices do.
+    ///
+    /// When the previous client closed its channel without an AAP disconnect,
+    /// the AirPods answer the first handshake on that dead channel, tear it
+    /// down, and ignore everything else on the new one. Sending the handshake
+    /// again until the AirPods answer it here gets past that.
     pub fn hello(&self) -> Result<()> {
-        self.send(&HANDSHAKE)?;
-        std::thread::sleep(Duration::from_millis(150));
+        let mut buf = [0u8; 2048];
+        let mut answered = false;
+        for _ in 0..HANDSHAKE_TRIES {
+            self.send(&HANDSHAKE)?;
+            let until = Instant::now() + Duration::from_millis(700);
+            while !answered && Instant::now() < until {
+                if let Some(n) = self.recv(&mut buf, Duration::from_millis(100))? {
+                    answered = buf[..n].starts_with(&CONNECT_RESPONSE);
+                }
+            }
+            if answered {
+                break;
+            }
+        }
+        if !answered {
+            bail!("the AirPods do not answer the AAP handshake");
+        }
         self.send(&[&HEADER[..], &SET_FEATURES].concat())?;
         std::thread::sleep(Duration::from_millis(150));
         self.send(&[&HEADER[..], &REQUEST_NOTIFICATIONS].concat())?;
@@ -193,6 +217,26 @@ impl Link {
 
     pub fn stop_tracking(&mut self, stream: u8) -> Result<()> {
         self.start_tracking(stream, 0)
+    }
+}
+
+impl Drop for Link {
+    /// Ends the AAP session before the channel closes, so the AirPods do not
+    /// keep it and answer the next client's handshake on this dead channel.
+    /// The motion stream keeps running for the other connections.
+    fn drop(&mut self) {
+        if self.send(&DISCONNECT).is_err() {
+            return;
+        }
+        let mut buf = [0u8; 2048];
+        let until = Instant::now() + Duration::from_millis(300);
+        while Instant::now() < until {
+            match self.recv(&mut buf, Duration::from_millis(50)) {
+                Ok(Some(n)) if buf[..n].starts_with(&DISCONNECT_RESPONSE) => return,
+                Ok(_) => {}
+                Err(_) => return,
+            }
+        }
     }
 }
 
